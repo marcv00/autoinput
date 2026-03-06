@@ -1,10 +1,3 @@
-Aquí tienes una **versión optimizada del README enfocada específicamente en el uso con *SirsiDynix WorkFlows***, manteniendo un tono más profesional y alineado con el objetivo real de la herramienta.
-
-También eliminé partes que no aplican tanto (como Excel inteligente) y reforcé el caso de uso **bibliotecario / sistemas legacy tipo WorkFlows**.
-
----
-
-````md
 # 🚀 AutoInput Workflows
 
 > Automatización segura y controlada de ingreso masivo de datos en **SirsiDynix WorkFlows** mediante simulación de teclado a bajo nivel.
@@ -25,7 +18,6 @@ La aplicación simula **pulsaciones reales de teclado**, garantizando compatibil
 - [📂 Estructura del Proyecto](#-estructura-del-proyecto)
 - [🧠 Arquitectura](#-arquitectura)
 - [⚠️ Consideraciones](#️-consideraciones)
-
 
 ---
 
@@ -54,6 +46,8 @@ Ejemplos de uso:
 - Envía entradas directamente al campo activo
 
 El sistema **no interactúa con la base de datos**, únicamente simula entradas de teclado tal como lo haría un operador humano.
+
+---
 
 ## 🎛️ Automatización Segura
 
@@ -94,11 +88,11 @@ Durante la ejecución se muestra:
 # 🛠️ Requisitos
 
 | Requisito | Versión |
-|--------|--------|
+|-----------|---------|
 | Sistema Operativo | Windows 10 o superior |
 | Python | 3.8+ |
 
-### 📚 Librerías necesarias
+## 📚 Librerías necesarias
 
 ```bash
 pip install pywin32 customtkinter pillow
@@ -108,14 +102,16 @@ pip install pywin32 customtkinter pillow
 
 # 📦 Instalación
 
-1. Clonar el repositorio
+## 1️⃣ Clonar el repositorio
 
 ```bash
 git clone https://github.com/tu-usuario/AutoInput.git
 cd AutoInput
 ```
 
-2. Instalar dependencias
+## 2️⃣ Instalar dependencias
+
+Si el proyecto incluye `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
@@ -169,15 +165,11 @@ Para distribuir la aplicación sin necesidad de instalar Python:
 pip install pyinstaller
 ```
 
----
-
 ## 2️⃣ Generar ejecutable
 
 ```bash
 pyinstaller --noconsole --onefile --name "AutoInput" --add-data "refresh.png;." main.py
 ```
-
----
 
 ## 3️⃣ Resultado
 
@@ -257,3 +249,4 @@ Responsabilidades:
 * No debe utilizarse mientras se interactúa con otras aplicaciones.
 * Se recomienda verificar que el **cursor esté correctamente posicionado** antes de iniciar.
 * Siempre realizar pruebas con **archivos pequeños antes de ejecutar grandes volúmenes**.
+
