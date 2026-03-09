@@ -282,112 +282,148 @@ class AutoInputApp(ctk.CTk):
             )
 
     def start_thread(self):
-
         if not self.file_path:
             messagebox.showwarning("Error", "Carga un archivo primero.")
             return
 
-        
+        # --- LÓGICA DE REANUDAR ---
+        if self.paused:
+            self.paused = False
+            self.btn_start.configure(text="Comenzar", state="disabled")
+            self.btn_stop.configure(text="Pausar", state="normal")
+            self.status.configure(text="Reanudando...", text_color="black")
+            return
+
+        # --- LÓGICA DE INICIO NORMAL ---
+        self.running = True
+        self.paused = False
+
+        self.btn_stop.configure(
+            text="Pausar",
+            state="normal",
+            fg_color="#e74c3c",
+            hover_color="#c0392b"
+        )
+        self.btn_start.configure(state="disabled")
 
         self.file_section.pack_forget()
         self.window_section.pack_forget()
         self.options_section.pack_forget()
 
         self.progress_section.pack(fill="x")
-
         self.geometry("550x420")
 
         threading.Thread(target=self.worker, daemon=True).start()
 
     def worker(self):
-
         try:
-
             target_title = self.window_list.get()
             parent_hwnd = win32gui.FindWindow(None, target_title)
 
+            self.update_idletasks()
+            self_hwnd = win32gui.GetParent(self.winfo_id())
+
+            self.engine.dock_window_left(self_hwnd)
+            self.engine.dock_window_right(parent_hwnd)
+
+            time.sleep(0.8)
             self.instructions_panel.pack(pady=20)
 
             for s in range(10, 0, -1):
-
+                # Si el usuario cancela durante la cuenta regresiva
+                if not self.running: 
+                    self.finalize_ui("cancelado")
+                    return
+                
                 msg = (
                     f"INICIANDO EN {s}s\n\n"
                     "• Coloque el cursor en el campo\n"
                     "• Haz clic izquierdo\n"
                     "• No toques el teclado"
                 )
-
                 self.instructions_label.configure(text=msg)
                 self.update()
                 time.sleep(1)
 
             self.instructions_panel.pack_forget()
-
-            self.start_time = time.time() # Empezar timer
+            self.start_time = time.time()
 
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 lines = [l.strip() for l in f if l.strip()]
 
             i = 0
-
-            while i < len(lines):
+            while i < len(lines) and self.running:
+                # Si está pausado, nos quedamos esperando sin avanzar la "i"
+                if self.paused:
+                    time.sleep(0.1)
+                    continue
 
                 line = lines[i]
 
                 self.status.configure(
                     text=f"Escribiendo {i+1} de {len(lines)}"
                 )
-
                 self.progress.set((i+1)/len(lines))
+                self.engine.force_focus(parent_hwnd)
 
                 completed = self.engine.send_input(
                     parent_hwnd,
                     line,
                     self.check_clear.get(),
-                    False
+                    False,
+                    should_stop=lambda: self.paused or not self.running
                 )
+
+                if not completed:
+                    if not self.running:
+                        break  # Se canceló por completo
+                    if self.paused:
+                        continue  # Se pausó, repetimos el ciclo (no avanza i)
 
                 if completed:
                     self.total_processed = i + 1
                     i += 1
                     time.sleep(self.delay_slider.get())
 
-            self.finalize_ui("exito")
+            self.finalize_ui("exito" if self.running else "cancelado")
 
-        except:
+        except Exception as e:
+            print(f"Error: {e}")
             self.finalize_ui("error")
-
+    
     def finalize_ui(self, result):
-
-        runtime = int(time.time() - self.start_time)
-
-        mins = runtime // 60
-        secs = runtime % 60
-
-        self.runtime_label.configure(
-            text=f"Tiempo total: {mins}m {secs}s"
-        )
+        if self.start_time:
+            runtime = int(time.time() - self.start_time)
+            mins = runtime // 60
+            secs = runtime % 60
+            self.runtime_label.configure(text=f"Tiempo total: {mins}m {secs}s")
 
         self.btn_back.pack(pady=10)
 
-        self.status.configure(
-            text=f"Items Procesados {self.total_processed}/{self.current_total_lines}",
-            text_color="#27ae60"
-        )
+        # Configuramos los textos para limpiar la UI
+        if result == "cancelado":
+            color = "#e74c3c"
+            text_status = f"Cancelado. Ítems procesados {self.total_processed}/{self.current_total_lines}"
+        else:
+            color = "#27ae60"
+            text_status = f"Ítems Procesados {self.total_processed}/{self.current_total_lines}"
+
+        self.status.configure(text=text_status, text_color=color)
+
+        # Restaurar botones a su estado neutral
+        self.btn_stop.configure(text="STOP", state="disabled")
+        self.btn_start.configure(text="Comenzar", state="normal")
+
 
     def reset_to_main(self):
-
         self.reset_state()
-
         self.progress_section.pack_forget()
 
-        # Hide everything first
         self.file_section.pack_forget()
         self.window_section.pack_forget()
         self.options_section.pack_forget()
         self.control_section.pack_forget()
 
-        # Re-pack in correct order
         self.file_section.pack(fill="x")
         self.window_section.pack(fill="x")
         self.options_section.pack(fill="x")
@@ -395,12 +431,35 @@ class AutoInputApp(ctk.CTk):
 
         self.geometry("550x720")
 
+        # --- LIMPIEZA TOTAL VISUAL PARA EVITAR ESTADOS FANTASMAS ---
         self.progress.set(0)
         self.runtime_label.configure(text="")
         self.file_info.configure(text="Ningún archivo seleccionado", text_color="gray")
+        self.status.configure(text="Estado: Listo", text_color="gray")
+        
+        # Resetear botones por si acaso
+        self.btn_start.configure(text="Comenzar", state="normal")
+        self.btn_stop.configure(text="STOP", state="disabled")
 
     def handle_stop(self):
-        self.running = False
+        if not self.paused:
+            # PRIMER CLIC: Pausar proceso
+            self.paused = True
+            self.btn_stop.configure(text="Cancelar")
+            self.btn_start.configure(text="Reanudar", state="normal")
+            self.status.configure(
+                text="Proceso en pausa",
+                text_color="#e67e22"
+            )
+        else:
+            # SEGUNDO CLIC: Cancelar definitivamente
+            self.running = False
+            self.paused = False
+            self.status.configure(
+                text="Proceso cancelado por el usuario",
+                text_color="#e74c3c"
+            )
+            self.btn_stop.configure(state="disabled")
 
     def refresh_windows(self):
 

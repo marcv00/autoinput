@@ -3,7 +3,6 @@ import win32api
 import win32con
 import win32com.client
 import time
-import ctypes
 
 # Constants
 WM_CHAR = 0x0102
@@ -11,11 +10,11 @@ WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 VK_RETURN = 0x0D
 VK_BACK = 0x08
-VK_HOME = 0x24  # Mantenemos la constante por si acaso, pero no se usa en Sirsi
+VK_HOME = 0x24
 
 class AutomationEngine:
     # --- TESTING CONFIG ---
-    # Set this to 1.0 for testing (1 second per char), 0.005 for production
+    # Para testing 1.0 y para producción 0.02#
     TEST_DELAY = 0.02
 
     @staticmethod
@@ -29,12 +28,13 @@ class AutomationEngine:
         return sorted(list(set(titles)))
 
     def force_focus(self, parent_hwnd):
+        # Clean and simple, no ALT key menu bar trigger
         try:
-            # shell.SendKeys('%') <- ELIMINADO para evitar activar menús
             win32gui.ShowWindow(parent_hwnd, win32con.SW_RESTORE)
             win32gui.SetForegroundWindow(parent_hwnd)
             time.sleep(0.05)
-        except: pass
+        except: 
+            pass
 
     def get_input_target(self, parent_hwnd):
         found = [parent_hwnd]
@@ -53,15 +53,17 @@ class AutomationEngine:
             excel = self.get_excel_app()
             if excel:
                 try:
-                    # 1. Prepare the cell
                     excel.ActiveCell.NumberFormat = "@" 
                     excel.ActiveCell.Value = "" 
                     
+                    def rollback_excel():
+                        excel.ActiveCell.Value = "" 
+                        excel.SendKeys("~~", True)
+
                     written_chars = 0
                     for char in text:
                         if should_stop and should_stop():
-                            excel.ActiveCell.Value = "" 
-                            excel.SendKeys("~~", True) 
+                            rollback_excel()
                             return False 
                         
                         current_val = excel.ActiveCell.Value or ""
@@ -69,59 +71,61 @@ class AutomationEngine:
                         written_chars += 1
                         time.sleep(self.TEST_DELAY)
                     
-                    # 2. FINISHED: Move to the next row
+                    # ONE LAST CHECK BEFORE ENTER
+                    if should_stop and should_stop():
+                        rollback_excel()
+                        return False 
+                    
                     excel.SendKeys("~", True)
                     time.sleep(0.1) 
                     return True
                 except: return False
 
         # --- SIRSI / UNIVERSAL LOGIC ---
-        self.force_focus(hwnd)
         target_hwnd = self.get_input_target(hwnd)
+        self.force_focus(hwnd)
         time.sleep(0.01)
 
         if clear_first:
             self.force_focus(hwnd)
             time.sleep(0.05)
 
-            # CTRL down
+            # CTRL + A
             win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
-            
-            # A down
             win32api.keybd_event(ord('A'), 0, 0, 0)
             win32api.keybd_event(ord('A'), 0, win32con.KEYEVENTF_KEYUP, 0)
-
-            # CTRL up
             win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
-
             time.sleep(0.15)
 
             # BACKSPACE
             win32api.keybd_event(VK_BACK, 0, 0, 0)
             win32api.keybd_event(VK_BACK, 0, win32con.KEYEVENTF_KEYUP, 0)
-
             time.sleep(0.15)
        
         written_chars = 0
+        
+        def rollback_sirsi():
+            for _ in range(written_chars):
+                win32gui.SendMessage(target_hwnd, WM_KEYDOWN, VK_BACK, 0)
+                time.sleep(0.02)
+                win32gui.SendMessage(target_hwnd, WM_KEYUP, VK_BACK, 0)
+                time.sleep(0.02)
+
         for char in text:
             if should_stop and should_stop():
-                # --- STABLE SENDMESSAGE BACKSPACE ---
-                # Re-verify focus one last time to ensure backspaces land in the right box
-                self.force_focus(hwnd) 
-                
-                for _ in range(written_chars):
-                    # We split the press and release with a tiny sleep
-                    win32gui.SendMessage(target_hwnd, WM_KEYDOWN, VK_BACK, 0)
-                    time.sleep(0.02) # Give the app a moment to register the "Down"
-                    win32gui.SendMessage(target_hwnd, WM_KEYUP, VK_BACK, 0)
-                    time.sleep(0.02) # Give the app a moment to register the "Up"
+                rollback_sirsi()
                 return False
 
             win32gui.SendMessage(target_hwnd, WM_CHAR, ord(char), 0)
             written_chars += 1
             time.sleep(self.TEST_DELAY)
 
-        # ONLY PRESS ENTER IF COMPLETE
+        # ONE LAST CHECK BEFORE ENTER
+        if should_stop and should_stop():
+            rollback_sirsi()
+            return False
+
+        # ONLY PRESS ENTER IF COMPLETE AND NOT STOPPED
         win32gui.SendMessage(target_hwnd, WM_KEYDOWN, VK_RETURN, 0)
         win32gui.SendMessage(target_hwnd, WM_KEYUP, VK_RETURN, 0)
        
@@ -137,8 +141,16 @@ class AutomationEngine:
         try:
             screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
             screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-            target_width = int(screen_width * 0.60)
+            width = int(screen_width * 0.60)
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, screen_width - target_width, 0,
-                                 target_width, screen_height, win32con.SWP_SHOWWINDOW)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, screen_width - width, 0, width, screen_height, win32con.SWP_SHOWWINDOW | win32con.SWP_NOOWNERZORDER)
+        except: pass
+
+    def dock_window_left(self, hwnd):
+        try:
+            screen_width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+            screen_height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+            width = int(screen_width * 0.40)
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOP, 0, 0, width, screen_height, win32con.SWP_SHOWWINDOW | win32con.SWP_NOOWNERZORDER)
         except: pass
